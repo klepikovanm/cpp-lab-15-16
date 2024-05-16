@@ -1,7 +1,6 @@
 #include <iostream>
 #include <fstream> 
-#include <thread> 
-#include <chrono> 
+#include <string> 
 using namespace std;
 
 template <typename T>
@@ -152,6 +151,7 @@ public:
     //перегрузка операторов + и -
     Matrix operator +(const Matrix & second) {
         if (this->lines == second.lines && this->columns == second.columns) {
+            cout << "Матрица сложения:" << endl;
             Matrix M(lines,columns);
             for (int i=0; i<lines; i++) {
                 for (int j=0; j<columns; j++) {
@@ -164,6 +164,7 @@ public:
     }
     Matrix operator -(const Matrix & second) {
         if (this->lines == second.lines && this->columns == second.columns) {
+            cout << "Матрица вычитания:" << endl;
             Matrix M(lines,columns);
             for (int i=0; i<lines; i++) {
                 for (int j=0; j<columns; j++) {
@@ -178,6 +179,7 @@ public:
     //перегрузка оператора * для умножения матриц и умножения матрицы на скаляр
     Matrix operator *(const Matrix & second) {
         if (this->columns == second.lines) {
+            cout << "Матрица произведения:" << endl;
             Matrix M(lines,second.columns);
             for (int i=0; i<lines; i++) {
                 for (int j=0; j<second.columns; j++) {
@@ -292,6 +294,7 @@ public:
                 Matrix temp_2 = temp.join();
                 temp_2.transposed();
                 Matrix temp_3 = temp_2 * (1/det);
+                cout << "Обратная матрица:" << endl;
                 return temp_3;
             }
         } 
@@ -434,113 +437,118 @@ public:
         } 
     }
 };
-//Сложение и вычитание
-void FirstThread(Matrix<double> a, Matrix<double> b){
-    ofstream file_1("Result_FirstThread.txt");
-    try {
-        try {
-            file_1 << "Матрица сложения:" << endl << a + b;
-        } catch (const char* error_message){//через параметр в блоке catch мы можем получить то сообщение, которое передается оператору throw
-            file_1 << error_message << endl;
-        }
-        try {
-            file_1 << "Матрица вычитания:" << endl << a - b;
-        } catch (const char* error_message){
-            file_1 << error_message << endl;
-        }   
-    } catch (...) {//является последним блоком catch в цепочке обработки исключений и предназначен для обработки общих ситуаций ошибок или случаев, которые не предусмотрены более конкретными блоками catch
-        file_1 << endl;  
-    }
-    file_1.close();
-}
-//Умножение матрицы на матрицу/скаляр
-void SecondThread(Matrix<double> a, Matrix<double> b, double scalar){
-    ofstream file_2("Result_SecondThread.txt");
-    try {
-        file_2 << "Матрица произведения:" << endl << a * b;
-    } catch(const char* error_message) {
-        file_2 << error_message << endl;
-    }
-
-    file_2 << "Матрица A, умноженная на скаляр:" << endl << a*scalar;
-    file_2.close();
-}
-//Детерминант, присоединенная, транспонированная и обратная матрица
-void ThirdThread(Matrix<double> b){
-    ofstream file_3("Result_ThirdThread.txt");
-    Matrix<double> Temp;
-    try {
-        try {
-            file_3 << "Детерминант B: " << b.determinant() << endl;
-        } catch(const char* error_message) {
-            file_3 << error_message << endl;
-        }
-        try {
-            file_3 << "Присоединенная матрица B*:" << endl << b.join();
-        } catch(const char* error_message) {
-            file_3 << error_message << endl;
-        }
-        try {
-            Temp = b;
-            Temp.transposed();
-            file_3 << "Транспонированная матрица B^:" << endl << Temp;
-        } catch(const char* error_message) {
-            file_3 << error_message << endl;
-        }
-        try {
-            file_3 << "Обратная матрица В^-1: " << endl << !b;
-        } catch(const char* error_message) {
-            file_3 << error_message << endl;
-        }
-    } catch(...) {
-        file_3 << endl;
-    }
-    file_3.close();
-}
 
 int main() {
+    //1-2
+    cout << "№1-2" << endl;
+    Matrix<int> A_1;
+    cin >> A_1;
+    cout << "Матрица ввода с размером А_1:" << endl << A_1;
 
-    ifstream file_main_read("DataMain.txt");
-    ofstream file_main_write("Result_MainThread.txt");
-    cout << "Начало работы" << endl << "Считывание А, B и скаляра из файла" << endl << "Процесс работы" << endl;
-    Matrix<double> A;
-    file_main_read >> A;
-    file_main_write << "Матрица А:" << endl << A;
+    Matrix<int> A_2(3,4);
+    cin >> A_2;
+    cout << "Матрица ввода без размеров А_2:" << endl << A_2; 
 
-    Matrix<double> B;
-    file_main_read >> B;
-    file_main_write << "Матрица B:" << endl << B; 
-    
+    ifstream file_B("matrix_B.txt");
+    Matrix<int> B(file_B);  
+    file_B.close();
+    cout << "Матрица из файла B:" << endl << B;
+
+    ifstream file_C("matrix_C.txt");
+    Matrix<double> C;
+    file_C >> C;
+    ofstream write("write_matrix.txt");
+    write << "Матрица из одного файла в другой С:" << endl << C;
+    file_C.close();
+    write.close();
+
+    //3
+    cout << "№3" << endl;
+    try {
+        Matrix<double> R_1, R_2;
+        cin >> R_1 >> R_2;
+        try {
+            cout << R_1 + R_2;;
+        } catch (const char* error_message){//через параметр в блоке catch мы можем получить то сообщение, которое передается оператору throw
+            cout << error_message << endl;
+        }
+        try {
+            cout << R_1 - R_2;
+        } catch (const char* error_message){
+            cout << error_message << endl;
+        }   
+    } catch (...) {//является последним блоком catch в цепочке обработки исключений и предназначен для обработки общих ситуаций ошибок или случаев, которые не предусмотрены более конкретными блоками catch
+        cout << endl;  
+    }
+
+    //4
+    cout << "№4" << endl;
+    try {
+        Matrix<int> P_1, P_2;
+        cin >> P_1 >> P_2;
+        cout << P_1 * P_2;
+    } catch(const char* error_message) {
+        cout << error_message << endl;
+    }
+    Matrix<double> S;
+    cin >> S;
     double s;
-    file_main_read >> s;
-    file_main_write << "Скаляр, на который далее умножится А: " << s << endl;
+    cout << "Введите скаляр: ";
+    cin >> s;
+    cout << "Матрица, умноженная на скаляр:" << endl << S*s;
 
-    thread first(FirstThread,A,B);
-    thread second(SecondThread,A,B,s);
-    thread third(ThirdThread,B);
+    //5
+    cout << "№5" << endl;
+    try {
+        Matrix<double> D;
+        cin >> D;
+        try {
+            cout << "Детерминант: " << D.determinant() << endl;
+        } catch(const char* error_message) {
+            cout << error_message << endl;
+        }
+        try {
+            cout << "Присоединенная матрица:" << endl << D.join();
+        } catch(const char* error_message) {
+            cout << error_message << endl;
+        }
+        try {
+            D.transposed();
+            cout << "Транспонированная матрица:" << endl << D;
+        } catch(const char* error_message) {
+            cout << error_message << endl;
+        }
+        try {
+            D.transposed();
+            cout << !D;
+        } catch(const char* error_message) {
+            cout << error_message << endl;
+        }
+    } catch(...) {
+        cout << endl;
+    }
 
-    /*FirstThread(A,B);
-    SecondThread(A,B,s);
-    ThirdThread(B);*/
+    //6
+    cout << "№6" << endl;
+    Matrix<int> X, Y;
+    cin >> X >> Y;
+    cout << "X:" << endl << X;
+    X = Y;
+    cout << "Y:" << endl << Y << "X:" << endl << X;
 
-    file_main_write << "Нулевая и единичная матрицы по умолчанию" << endl;
-    file_main_write << "Нулевая матрица:" << endl << Matrix<int>::zero(3,4);
+    //7
+    cout << "№7" << endl;
+    cout << "Нулевая матрица:" << endl << Matrix<int>::zero(3,4);
     try {
         Matrix<int> E_1 = Matrix<int>::id(3,4);
-        file_main_write << "Единичная матрица:" << endl << E_1;
+        cout << "Единичная матрица:" << endl << E_1;
     } catch(const char* error_message) {
-        file_main_write << error_message << endl;
+        cout << error_message << endl;
     }
     try {
         Matrix<int> E_2 = Matrix<int>::id(4,4);
-        file_main_write << "Единичная матрица:" << endl << E_2;
+        cout << "Единичная матрица:" << endl << E_2;
     } catch(const char* error_message) {
-        file_main_write << error_message << endl;
+        cout << error_message << endl;
     }
-
-    first.join();
-    second.join();
-    third.join();
-    cout << "Завершение работы";
-    return 0;
 }
