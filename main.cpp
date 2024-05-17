@@ -1,6 +1,8 @@
 #include <iostream>
 #include <fstream> 
 #include <string> 
+#include <vector>
+#include <thread> //для потоков
 using namespace std;
 
 template <typename T>
@@ -43,6 +45,15 @@ private:
             one = -1;
         }
         return one*temp.determinant();
+    }
+    //функция для вычисления размера блоков
+    int BlockSize(int l, int c) {
+        for (int i=100; i>1; i--) {
+            if (l % i == 0 & c % i == 0) {
+                return i;
+            }
+        }
+        return 1;
     }
 public: 
     //Конструктор по умолчанию(пустая матрица)
@@ -91,6 +102,16 @@ public:
     //Деструктор
     ~Matrix() {
         clear();
+    }
+    //Получение вне класса доступ к параметрам матрицы
+    int get_lines() const {
+        return lines;
+    }
+    int get_columns() const {
+        return columns;
+    }
+    Matrix get_matrix() const {
+        return matrix;
     }
 
     //Ввод с консоли >>
@@ -152,26 +173,56 @@ public:
     Matrix operator +(const Matrix & second) {
         if (this->lines == second.lines && this->columns == second.columns) {
             cout << "Матрица сложения:" << endl;
-            Matrix M(lines,columns);
-            for (int i=0; i<lines; i++) {
-                for (int j=0; j<columns; j++) {
-                    M.matrix[i][j] = this->matrix[i][j] + second.matrix[i][j];
+            Matrix result(lines,columns);
+            //Создание пула потоков
+            vector<thread> threads;
+            //Разбиение матрицы на блоки
+            int block_size = BlockSize(lines, columns); //размер блока
+            int num_block_lines = lines / block_size;//количество блоков по строкам
+            int num_block_columns = columns / block_size;//количество блоков по столбцам
+            //Создание потока для каждого блока
+            for (int i=0; i<num_block_lines; i++) {
+                for (int j=0; j<num_block_columns; j++) {
+                    threads.emplace_back([this, &second, i, j, block_size, &result] { //threads.emplace_back() добавляет новый поток в вектор потоков threads сразу же создавая его (используя push_back, мы сначала создаем объект, а потом копируем в конец вектора) | [] - синтаксис лямбда-функции | this - указывает на текущий объект | &second - ссылка на объект second | i, j - локальные переменные, которые передаются в лямбда-функцию по значению | block_size, result - ссылки на переменные из окружающего контекста | Лямбда-функция в данном случае выполняет сложение блоков двух матриц this->matrix и second.matrix(передаем ссылку на вторую матрицу, чтоб избежать копирования, а также ссылка гарантирует, что функция будет работать с последней версией матрицы и сможет обращаться к ее значениям, в случае с this она уже имеет ко всему доступ, так как создается внутри метода класса и объект this итак захватывается), сохраняя результат в блоке результирующей матрицы result.matrix.
+                        //Вычисление суммы блока, лямбда-функция позволяет делать это параллельно
+                        for (int l=0; l<block_size; l++) {
+                            for (int c=0; c<block_size; c++) {
+                                result.matrix[i * block_size + l][j * block_size + c] = this->matrix[i * block_size + l][j * block_size + c] + second.matrix[i * block_size + l][j * block_size + c]; //пусть блоки нумеруются от нуля, тогда по индексам i j мы можем определить в каком блоке находимся, а прибавляя к произведению l или c, мы определяем элемент
+                            }
+                        }
+                    });
                 }
             }
-            return M;
+            for (int i = 0; i < threads.size(); i++) { //перебирает все потоки в векторе threads
+                threads[i].join();//ожидание завершения потока
+            }
+            return result;
         } 
         throw "Матрицы разного порядка, сложить нельзя!"; //Оператор throw генерирует исключение, которое представлено временным объектом типа PlusError
     }
     Matrix operator -(const Matrix & second) {
         if (this->lines == second.lines && this->columns == second.columns) {
             cout << "Матрица вычитания:" << endl;
-            Matrix M(lines,columns);
-            for (int i=0; i<lines; i++) {
-                for (int j=0; j<columns; j++) {
-                    M.matrix[i][j] = this->matrix[i][j] - second.matrix[i][j];
+            Matrix result(lines,columns);
+            vector<thread> threads;
+            int block_size = BlockSize(lines, columns);
+            int num_block_lines = lines / block_size;
+            int num_block_columns = columns / block_size;
+            for (int i=0; i<num_block_lines; i++) {
+                for (int j=0; j<num_block_columns; j++) {
+                    threads.emplace_back([this, &second, i, j, block_size, &result] {
+                        for (int l=0; l<block_size; l++) {
+                            for (int c=0; c<block_size; c++) {
+                                result.matrix[i * block_size + l][j * block_size + c] = this->matrix[i * block_size + l][j * block_size + c] - second.matrix[i * block_size + l][j * block_size + c]; 
+                            }
+                        }
+                    });
                 }
             }
-            return M;
+            for (int i = 0; i < threads.size(); i++) {
+                threads[i].join();
+            }
+            return result;
         } 
         throw "Матрицы разного порядка, вычесть нельзя!";
     }
@@ -180,27 +231,47 @@ public:
     Matrix operator *(const Matrix & second) {
         if (this->columns == second.lines) {
             cout << "Матрица произведения:" << endl;
-            Matrix M(lines,second.columns);
-            for (int i=0; i<lines; i++) {
-                for (int j=0; j<second.columns; j++) {
-                    M.matrix[i][j] = 0;
-                    for (int k=0; k<columns; k++) {
-                        M.matrix[i][j] += this->matrix[i][k] * second.matrix[k][j];
+            Matrix result(lines,second.columns);
+            vector<thread> threads;
+            for (int i=0; i<lines; i++) {//потоков будет столько, сколько строк в первой матрице
+                threads.emplace_back([this, &second, i, &result] {
+                    for (int j=0; j<second.columns; j++) {
+                        result.matrix[i][j] = 0;
+                        for (int k=0; k<columns; k++) {
+                            result.matrix[i][j] += this->matrix[i][k] * second.matrix[k][j];
+                        }
                     }
-                }
+                });  
             }
-            return M;
+            for (int i = 0; i < threads.size(); i++) {
+                threads[i].join();
+            }
+            return result;
         }
         throw "Кол-во столбцов 1-й матрицы не равно кол-ву строк 2-й матрицы, умножить нельзя!";
     } 
     Matrix operator *(T scalar) {
-        Matrix M(lines,columns);
-        for (int i=0; i<lines; i++) {
-            for (int j=0; j<columns; j++) {
-                M.matrix[i][j] = this->matrix[i][j] * scalar;
+        cout << "Матрица, умноженная на скаляр:" << endl;
+        Matrix result(lines,columns);
+        vector<thread> threads;
+        int block_size = BlockSize(lines, columns);
+        int num_block_lines = lines / block_size;
+        int num_block_columns = columns / block_size;
+        for (int i=0; i<num_block_lines; i++) {
+            for (int j=0; j<num_block_columns; j++) {
+                threads.emplace_back([this, &scalar, i, j, block_size, &result] {
+                    for (int l=0; l<block_size; l++) {
+                        for (int c=0; c<block_size; c++) {
+                            result.matrix[i * block_size + l][j * block_size + c] = this->matrix[i * block_size + l][j * block_size + c] * scalar; 
+                        }
+                    }
+                });
             }
         }
-        return M;
+        for (int i = 0; i < threads.size(); i++) {
+            threads[i].join();
+        }
+        return result;
     }
 
     //Функция для нахождения детерминанта
@@ -439,64 +510,41 @@ public:
 };
 
 int main() {
-    //1-2
-    cout << "№1-2" << endl;
-    Matrix<int> A_1;
-    cin >> A_1;
-    cout << "Матрица ввода с размером А_1:" << endl << A_1;
+    int num_cores = thread::hardware_concurrency(); //количество всех ядер на компьютере=количество потоков, запускаемых одновременно
+    cout << "Количество ядер: " << num_cores << endl << '\v';
 
-    Matrix<int> A_2(3,4);
-    cin >> A_2;
-    cout << "Матрица ввода без размеров А_2:" << endl << A_2; 
-
-    ifstream file_B("matrix_B.txt");
-    Matrix<int> B(file_B);  
-    file_B.close();
-    cout << "Матрица из файла B:" << endl << B;
-
-    ifstream file_C("matrix_C.txt");
-    Matrix<double> C;
-    file_C >> C;
-    ofstream write("write_matrix.txt");
-    write << "Матрица из одного файла в другой С:" << endl << C;
-    file_C.close();
-    write.close();
-
-    //3
-    cout << "№3" << endl;
+    cout << "№15-1" << endl;
+    Matrix<int> A;
+    Matrix<int> B;
+    ifstream data_file("DataFail.txt");
+    data_file >> A >> B;
+    cout << "Матрица A:" << endl << A << "Матрица B:" << endl << B;
+    data_file.close();
+    //Сложение и вычитание
     try {
-        Matrix<double> R_1, R_2;
-        cin >> R_1 >> R_2;
         try {
-            cout << R_1 + R_2;;
+            cout << A + B;
         } catch (const char* error_message){//через параметр в блоке catch мы можем получить то сообщение, которое передается оператору throw
             cout << error_message << endl;
         }
         try {
-            cout << R_1 - R_2;
+            cout << A - B;
         } catch (const char* error_message){
             cout << error_message << endl;
-        }   
+        }
     } catch (...) {//является последним блоком catch в цепочке обработки исключений и предназначен для обработки общих ситуаций ошибок или случаев, которые не предусмотрены более конкретными блоками catch
         cout << endl;  
     }
-
-    //4
-    cout << "№4" << endl;
+    //Умножение на матрицу/скаляр
     try {
-        Matrix<int> P_1, P_2;
-        cin >> P_1 >> P_2;
-        cout << P_1 * P_2;
+        cout << A * B;
     } catch(const char* error_message) {
         cout << error_message << endl;
     }
-    Matrix<double> S;
-    cin >> S;
-    double s;
-    cout << "Введите скаляр: ";
-    cin >> s;
-    cout << "Матрица, умноженная на скаляр:" << endl << S*s;
+    double s = 8;
+    cout << A * s;
 
+    /*
     //5
     cout << "№5" << endl;
     try {
@@ -550,5 +598,5 @@ int main() {
         cout << "Единичная матрица:" << endl << E_2;
     } catch(const char* error_message) {
         cout << error_message << endl;
-    }
+    }*/
 }
