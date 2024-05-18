@@ -3,6 +3,8 @@
 #include <string> 
 #include <vector>
 #include <thread> //для потоков
+#include <future> 
+#include <chrono>
 using namespace std;
 
 template <typename T>
@@ -49,7 +51,7 @@ private:
     //функция для вычисления размера блоков
     int BlockSize(int l, int c) {
         for (int i=100; i>1; i--) {
-            if (l % i == 0 & c % i == 0) {
+            if (l % i == 0 && c % i == 0) {
                 return i;
             }
         }
@@ -251,7 +253,6 @@ public:
         throw "Кол-во столбцов 1-й матрицы не равно кол-ву строк 2-й матрицы, умножить нельзя!";
     } 
     Matrix operator *(T scalar) {
-        cout << "Матрица, умноженная на скаляр:" << endl;
         Matrix result(lines,columns);
         vector<thread> threads;
         int block_size = BlockSize(lines, columns);
@@ -313,39 +314,46 @@ public:
     }
     //Функция для нахождения присоединенной матрицы - A*
     Matrix join() {
-        T ** M = this->matrix;
-        Matrix temp(lines,columns);
-        for (int i=0; i<lines; i++) {
-            for (int j=0; j<columns; j++){
-                temp.matrix[i][j] = matrix[i][j]; 
-            }
-        }
-        Matrix m(lines,columns);
+        Matrix result(lines,columns);
         if (lines != columns) {
             throw "Матрица не квадратная, нет присоединенной!";
         } else {
+            vector<future<void>> futures;
             for (int i=0; i<lines; i++) {
-                for (int j=0; j<columns; j++){
-                    m.matrix[i][j] = temp.addition(i+1,j+1);
-                }
+                futures.push_back(async(launch::async, [i, this, &result]() {
+                    for (int j=0; j<columns; j++) {
+                        result.matrix[i][j] = addition(i+1,j+1);
+                    }
+                }));
+            }
+            for (int i = 0; i < futures.size(); i++) {
+                futures[i].get(); 
             }
         } 
-        return m;
+        return result;
     }
     //Функция для транспонирования матрицы
     void transposed() {
-        T** M = new T*[columns];
+        T** result = new T*[columns];
         for (int i=0; i<columns; i++) {
-            M[i] = new T[lines];
-            for(int j=0; j<lines; j++) {
-                M[i][j] = matrix[j][i];
-            }
+            result[i] = new T[lines];
+        }
+        vector<future<void>> futures;
+        for (int i=0; i<columns; i++){
+            futures.push_back(async(launch::async, [i, this, &result]() {
+                for (int j=0; j<lines; j++) {
+                    result[i][j] = matrix[j][i];
+                }
+            }));
+        }
+        for (int i = 0; i < futures.size(); i++) {
+            futures[i].get(); 
         }
         clear();
         int l = lines;
         lines = columns;
         columns = l;
-        matrix = M;
+        matrix = result;
     }
     //Перегрузка оператра ! для вычисления обраной матрицы
     Matrix operator !() {
@@ -372,7 +380,47 @@ public:
     }
 
     //Перегрузка оператора присваивания =
+    /*Matrix& operator =(const Matrix & second) {
+        auto start = chrono::high_resolution_clock::now();
+        if (this == &second) {
+            return *this;
+        }
+        clear();
+        lines = second.lines;
+        columns=second.columns;
+        matrix = new T* [lines];
+        for (int i=0; i<lines; i++) {
+             matrix[i] = new T [columns];
+        }
+        vector<future<void>> futures;
+        int block_size = BlockSize(lines, columns);
+        int num_block_lines = lines / block_size;
+        int num_block_columns = columns / block_size;
+        //Создаем фьючерсы для каждого блока
+        for (int i = 0; i < num_block_lines; i++) {
+            for (int j = 0; j < num_block_columns; j++) {
+                futures.push_back(async(launch::async, [i, j, block_size, this, &second]() {
+                for (int l=0; l<block_size; l++) {
+                        for (int c=0; c<block_size; c++) {
+                            this->matrix[i * block_size + l][j * block_size + c] = second.matrix[i * block_size + l][j * block_size + c]; 
+                        }
+                    }
+                }));
+            }
+        }
+        for (int i = 0; i < futures.size(); i++) {
+            futures[i].get(); 
+        }
+        auto end = chrono::high_resolution_clock::now();
+        auto duration = chrono::duration_cast<chrono::nanoseconds>(end - start);
+        cout << "Время выполнения оператора присваивания: " << duration.count() << " наносекунд" << endl;
+        return *this;
+    } Многопоточное копирование дольше(429817 наносекунд), чем однопоточное(52846 наносекунд)  (проверено на матрицах 100 на 100) На создание потоков уходит больше времени, чем на алгоритм. Если бы матрицы были много больших размеров, то постепенно с их ростом многопоточное копирование становилось бы быстрее*/
     Matrix& operator =(const Matrix & second) {
+        auto start = chrono::high_resolution_clock::now();
+        if (this == &second) {
+            return *this;
+        }
         clear();
         lines = second.lines;
         columns=second.columns;
@@ -383,32 +431,65 @@ public:
                 matrix[i][j] = second.matrix[i][j];
             }
         }
+        auto end = chrono::high_resolution_clock::now();
+        auto duration = chrono::duration_cast<chrono::nanoseconds>(end - start);
+        //cout << "Время выполнения оператора присваивания: " << duration.count() << " наносекунд" << endl;
         return *this;
     }
 
     //Cтатические методы создания нулевых и единичных матриц указанного размера
     static Matrix<T> zero(int k_lines, int k_columns) {
-        Matrix<T> M(k_lines, k_columns);
-        for (int i = 0; i < k_lines; i++) {
-            for (int j = 0; j < k_columns; j++) {
-                M.matrix[i][j] = 0;
+        Matrix<T> result(k_lines, k_columns);
+        vector<future<void>> futures;//вектор, который будет хранить в себе результат каждого блока(функция ничего не возвращает, поэтому void)
+        int block_size = result.BlockSize(k_lines, k_columns);
+        int num_block_lines = k_lines / block_size;
+        int num_block_columns = k_columns / block_size;
+        for (int i = 0; i < num_block_lines; i++) {
+            for (int j = 0; j < num_block_columns; j++) {
+                futures.push_back(async(launch::async, [i, j, block_size, &result]() {//Аргумент launch::async указывает, что поток должен быть запущен сразу, а не отложен на потом.
+                for (int l=0; l<block_size; l++) {
+                        for (int c=0; c<block_size; c++) {
+                            result.matrix[i * block_size + l][j * block_size + c] = 0; 
+                        }
+                    }
+                }));
             }
         }
-        return M;
+        for (int i = 0; i < futures.size(); i++) {
+            futures[i].get();//Ждем завершения всех фьючерсов
+        }
+        return result;
     }
     static Matrix<T> id(int k_lines, int k_columns) {
         if (k_lines == k_columns) {
-            Matrix<T> M(k_lines, k_columns);
-            for (int i = 0; i < k_lines; i++) {
-                for (int j = 0; j < k_columns; j++) {
-                    if (i!=j) {
-                        M.matrix[i][j] = 0;
-                    } else {
-                        M.matrix[i][j] = 1;
-                    } 
+            Matrix<T> result(k_lines, k_columns);
+            vector<future<void>> futures;
+            int block_size = result.BlockSize(k_lines, k_columns);
+            int num_block_lines = k_lines / block_size;
+            int num_block_columns = k_columns / block_size;
+            for (int i = 0; i < num_block_lines; i++) {
+                for (int j = 0; j < num_block_columns; j++) {
+                    futures.push_back(async(launch::async, [i, j, block_size, &result]() {
+                        for (int l=0; l<block_size; l++) {
+                            for (int c=0; c<block_size; c++) {
+                                if (i!=j) {
+                                zero(block_size, block_size);
+                                } else {
+                                    if ((i * block_size + l)!=(j * block_size + c)) {
+                                    result.matrix[i * block_size + l][j * block_size + c] = 0;
+                                    } else {
+                                    result.matrix[i * block_size + l][j * block_size + c] = 1;
+                                    } 
+                                }
+                            } 
+                        }
+                    }));
                 }
             }
-            return M;
+        for (int i = 0; i < futures.size(); i++) {
+            futures[i].get();
+        }
+            return result;
         }
         throw "Матрица не квадратная, она не может быть единичной!";
     }
@@ -416,16 +497,33 @@ public:
     //Перегрузка операторов == и != для сравнения матриц
     bool operator ==(const Matrix & second){
         if (this->lines == second.lines && this->columns == second.columns) {
-            for (int i=0; i<lines; i++) {
-                for (int j=0; j<columns; j++) {
-                    if (this->matrix[i][j] != second.matrix[i][j]) {
-                        cout << "Матрицы не равны" << endl;;
-                        return false;
-                    }
-                } 
+            vector<future<bool>> futures;
+            int block_size = BlockSize(lines, columns);
+            int num_block_lines = lines / block_size;
+            int num_block_columns = columns / block_size;
+            for (int i = 0; i < num_block_lines; i++) {
+                for (int j = 0; j < num_block_columns; j++) {
+                    futures.push_back(async(launch::async, [i, j, block_size, &second, this]() {
+                        for (int l=0; l<block_size; l++) {
+                            for (int c=0; c<block_size; c++) {
+                                if (this->matrix[i * block_size + l][j * block_size + c] != second.matrix[i * block_size + l][j * block_size + c]) {
+                                    return false;
+                                }  
+                            }
+                        }
+                        return true;
+                    }));
+                }
             }
-            cout <<  "Матрицы равны" << endl;
+            for (int i = 0; i < futures.size(); i++) {
+                if (futures[i].get() == false) {
+                    cout << "Матрицы не равны" << endl;
+                    return false;
+                }
+            }
+            cout << "Матрицы равны" << endl;
             return true;
+
         } else {
             cout << "Матрицы не равны" << endl;
             return false;
@@ -436,16 +534,31 @@ public:
     }
     //Перегрузка операторов == и != для сравнения матрицы и скаляра 
     bool operator ==(double scalar) {
-        for (int i=0; i<lines; i++) {
-            for(int j=0; j<columns; j++) {
-                if (i!=j && matrix[i][j] != 0) {
-                    cout << "Матрица не равна скаляру" << endl;
-                    return false;
-                } 
-                if (i==j && matrix[i][j] != scalar) {
-                    cout << "Матрица не равна скаляру" << endl;
-                    return false;
-                }
+        vector<future<bool>> futures;
+        int block_size = BlockSize(lines, columns);
+        int num_block_lines = lines / block_size;
+        int num_block_columns = columns / block_size;
+        for (int i = 0; i < num_block_lines; i++) {
+            for (int j = 0; j < num_block_columns; j++) {
+                futures.push_back(async(launch::async, [i, j, block_size, &scalar, this]() {
+                    for (int l=0; l<block_size; l++) {
+                        for (int c=0; c<block_size; c++) {
+                            if (((i * block_size + l)!=(j * block_size + c)) && (this->matrix[i * block_size + l][j * block_size + c] != 0)) {
+                                return false;
+                            }  
+                            if (((i * block_size + l)==(j * block_size + c)) && (this->matrix[i * block_size + l][j * block_size + c] != scalar)) {
+                                return false;
+                            } 
+                        }
+                    }
+                    return true;
+                }));
+            }
+        }
+        for (int i = 0; i < futures.size(); i++) {
+            if (futures[i].get() == false) {
+                cout << "Матрица не равна скаляру" << endl;
+                return false;
             }
         }
         cout << "Матрица равна скаляру" << endl;
@@ -514,10 +627,9 @@ int main() {
     cout << "Количество ядер: " << num_cores << endl << '\v';
 
     cout << "№15-1" << endl;
-    Matrix<int> A;
-    Matrix<int> B;
-    ifstream data_file("DataFail.txt");
-    data_file >> A >> B;
+    Matrix<double> A, B, C, D;
+    ifstream data_file("DataFile.txt");
+    data_file >> A >> B >> C >> D;
     cout << "Матрица A:" << endl << A << "Матрица B:" << endl << B;
     data_file.close();
     //Сложение и вычитание
@@ -542,61 +654,66 @@ int main() {
         cout << error_message << endl;
     }
     double s = 8;
-    cout << A * s;
+    cout << "Матрица, умноженная на скаляр:" << endl << A * s;
 
-    /*
-    //5
-    cout << "№5" << endl;
-    try {
-        Matrix<double> D;
-        cin >> D;
-        try {
-            cout << "Детерминант: " << D.determinant() << endl;
-        } catch(const char* error_message) {
-            cout << error_message << endl;
-        }
-        try {
-            cout << "Присоединенная матрица:" << endl << D.join();
-        } catch(const char* error_message) {
-            cout << error_message << endl;
-        }
-        try {
-            D.transposed();
-            cout << "Транспонированная матрица:" << endl << D;
-        } catch(const char* error_message) {
-            cout << error_message << endl;
-        }
-        try {
-            D.transposed();
-            cout << !D;
-        } catch(const char* error_message) {
-            cout << error_message << endl;
-        }
-    } catch(...) {
-        cout << endl;
-    }
-
-    //6
-    cout << "№6" << endl;
-    Matrix<int> X, Y;
-    cin >> X >> Y;
-    cout << "X:" << endl << X;
-    X = Y;
-    cout << "Y:" << endl << Y << "X:" << endl << X;
-
-    //7
-    cout << "№7" << endl;
+    cout << "№15-2" << endl;
+    //Оператор =, проверка матриц на равенство, проверка на равенство матрицы и скаляра
+    cout << "Матрица A:" << endl << A << "Матрица B:" << endl << B;
+    B = A;
+    cout << "Матрица B = A:" << endl << B;
+    cout << "Сравнение A и B:" << endl;
+    bool equal_A_B = A==B;
+    bool not_equal_A_B = A!=B;
+    cout << '\v';
+    cout << "Матрица C:" << endl << C;
+    cout << "Сравнение A и C:" << endl;
+    bool equal_A_C = A==C;
+    bool not_equal_A_C = A!=C;
+    cout << '\v';
+    cout << "Матрица D:" << endl << D;
+    cout << "Сравнение D и 8:" << endl;
+    bool equal_D_8 = D==8;
+    bool not_equal_D_8 = D!=8;
+    cout << '\v';
+    cout << "Сравнение D и 3:" << endl;
+    bool equal_D_3 = D==3;
+    bool not_equal_D_3 = D!=3;
+    cout << '\v';
+    //Нулевая, единичная и транспонированная матрица
     cout << "Нулевая матрица:" << endl << Matrix<int>::zero(3,4);
     try {
         Matrix<int> E_1 = Matrix<int>::id(3,4);
         cout << "Единичная матрица:" << endl << E_1;
     } catch(const char* error_message) {
-        cout << error_message << endl;
+        cout << error_message << endl << '\v';
     }
     try {
         Matrix<int> E_2 = Matrix<int>::id(4,4);
         cout << "Единичная матрица:" << endl << E_2;
     } catch(const char* error_message) {
         cout << error_message << endl;
-    }*/
+    }
+    C.transposed();
+    cout << "Транспонированная матрица С:" << endl << C;
+    //Детерминант, присоединенная и обратная матрица
+    try {
+        try {
+            cout << "Детерминант A: " << A.determinant() << endl;
+        } catch(const char* error_message) {
+            cout << error_message << endl;
+        }
+        try {
+            cout << A;
+            cout << "Присоединенная матрица A*:" << endl << A.join();
+        } catch(const char* error_message) {
+            cout << error_message << endl;
+        }
+        try {
+            cout << !A;
+        } catch(const char* error_message) {
+            cout << error_message << endl;
+        }
+    } catch(...) {
+        cout << endl;
+    }
 }
