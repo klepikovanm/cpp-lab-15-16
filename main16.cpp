@@ -174,19 +174,15 @@ public:
     //перегрузка операторов + и -
     Matrix operator +(const Matrix & second) {
         if (this->lines == second.lines && this->columns == second.columns) {
-            cout << "Матрица сложения:" << endl;
+            auto start = chrono::high_resolution_clock::now();//позволяет получить текущее время
             Matrix result(lines,columns);
-            //Создание пула потоков
             vector<thread> threads;
-            //Разбиение матрицы на блоки
-            int block_size = BlockSize(lines, columns); //размер блока
-            int num_block_lines = lines / block_size;//количество блоков по строкам
-            int num_block_columns = columns / block_size;//количество блоков по столбцам
-            //Создание потока для каждого блока
+            int num_block_lines = 2; //для 4 потоков делим на 4 блока
+            int num_block_columns = 2;
+            int block_size = lines / 2;
             for (int i=0; i<num_block_lines; i++) {
                 for (int j=0; j<num_block_columns; j++) {
-                    threads.emplace_back([this, &second, i, j, block_size, &result] { //threads.emplace_back() добавляет новый поток в вектор потоков threads сразу же создавая его (используя push_back, мы сначала создаем объект, а потом копируем в конец вектора) | [] - синтаксис лямбда-функции | this - указывает на текущий объект | &second - ссылка на объект second | i, j - локальные переменные, которые передаются в лямбда-функцию по значению | block_size, result - ссылки на переменные из окружающего контекста | Лямбда-функция в данном случае выполняет сложение блоков двух матриц this->matrix и second.matrix(передаем ссылку на вторую матрицу, чтоб избежать копирования, а также ссылка гарантирует, что функция будет работать с последней версией матрицы и сможет обращаться к ее значениям, в случае с this она уже имеет ко всему доступ, так как создается внутри метода класса и объект this итак захватывается), сохраняя результат в блоке результирующей матрицы result.matrix.
-                        //Вычисление суммы блока, лямбда-функция позволяет делать это параллельно
+                    threads.emplace_back([this, &second, i, j, block_size, &result] { 
                         for (int l=0; l<block_size; l++) {
                             for (int c=0; c<block_size; c++) {
                                 result.matrix[i * block_size + l][j * block_size + c] = this->matrix[i * block_size + l][j * block_size + c] + second.matrix[i * block_size + l][j * block_size + c]; //пусть блоки нумеруются от нуля, тогда по индексам i j мы можем определить в каком блоке находимся, а прибавляя к произведению l или c, мы определяем элемент
@@ -195,36 +191,61 @@ public:
                     });
                 }
             }
-            for (int i = 0; i < threads.size(); i++) { //перебирает все потоки в векторе threads
-                threads[i].join();//ожидание завершения потока
+            for (int i = 0; i < threads.size(); i++) { 
+                threads[i].join();
             }
+            auto end = chrono::high_resolution_clock::now();
+            auto duration = chrono::duration_cast<chrono::nanoseconds>(end - start);
+            cout << "Время сложения матриц " << lines << "x" << columns << " - " << duration.count() << " наносекунд" << endl;
             return result;
         } 
-        throw "Матрицы разного порядка, сложить нельзя!"; //Оператор throw генерирует исключение, которое представлено временным объектом типа PlusError
+        throw "Матрицы разного порядка, сложить нельзя!"; 
     }
     Matrix operator -(const Matrix & second) {
         if (this->lines == second.lines && this->columns == second.columns) {
-            cout << "Матрица вычитания:" << endl;
-            Matrix result(lines,columns);
-            vector<thread> threads;
-            int block_size = BlockSize(lines, columns);
-            int num_block_lines = lines / block_size;
-            int num_block_columns = columns / block_size;
-            for (int i=0; i<num_block_lines; i++) {
-                for (int j=0; j<num_block_columns; j++) {
-                    threads.emplace_back([this, &second, i, j, block_size, &result] {
-                        for (int l=0; l<block_size; l++) {
-                            for (int c=0; c<block_size; c++) {
-                                result.matrix[i * block_size + l][j * block_size + c] = this->matrix[i * block_size + l][j * block_size + c] - second.matrix[i * block_size + l][j * block_size + c]; 
-                            }
-                        }
-                    });
+            vector<Matrix> results;
+            vector<int> block_sizes_lines = {500, 250, 250, 125};//потоки 1 - 500x500, 2 - 250x500, 4 - 250x250, 8 - 125x250
+            vector<int> block_sizes_columns = {500, 500, 250, 125};
+            int block_size_lines;
+            int block_size_columns;
+            int num_thread;
+            for (int i=0; i<4; i++) {
+                auto start = chrono::high_resolution_clock::now();
+                block_size_lines = block_sizes_lines[i];
+                block_size_columns = block_sizes_columns[i];
+                if (i == 0) {
+                    num_thread = 1;
+                } else if (i == 1) {
+                    num_thread = 2;
+                } else if (i == 2) {
+                    num_thread = 4;
+                } else if (i == 3) {
+                    num_thread = 8;
                 }
+                Matrix result(lines,columns);
+                vector<thread> threads;
+                int num_block_lines = lines / block_size_lines;
+                int num_block_columns = columns / block_size_columns;
+                for (int i=0; i<num_block_lines; i++) {
+                    for (int j=0; j<num_block_columns; j++) {
+                        threads.emplace_back([this, &second, i, j, block_size_lines, block_size_columns, &result] {
+                            for (int l=0; l<block_size_lines; l++) {
+                                for (int c=0; c<block_size_columns; c++) {
+                                    result.matrix[i * block_size_lines + l][j * block_size_columns + c] = this->matrix[i * block_size_lines + l][j * block_size_columns + c] - second.matrix[i * block_size_lines + l][j * block_size_columns + c]; 
+                                }
+                            }
+                        });
+                    }
+                }
+                for (int i = 0; i < threads.size(); i++) {
+                    threads[i].join();
+                }
+                auto end = chrono::high_resolution_clock::now();
+                auto duration = chrono::duration_cast<chrono::nanoseconds>(end - start);
+                cout << "Количество потоков - " << num_thread << " Время вычитания матриц - " << duration.count() << " наносекунд" << endl;
+                results.push_back(result);
             }
-            for (int i = 0; i < threads.size(); i++) {
-                threads[i].join();
-            }
-            return result;
+            return results[3];
         } 
         throw "Матрицы разного порядка, вычесть нельзя!";
     }
@@ -379,45 +400,7 @@ public:
         } 
     }
 
-    //Перегрузка оператора присваивания =
-    /*Matrix& operator =(const Matrix & second) {
-        auto start = chrono::high_resolution_clock::now();
-        if (this == &second) {
-            return *this;
-        }
-        clear();
-        lines = second.lines;
-        columns=second.columns;
-        matrix = new T* [lines];
-        for (int i=0; i<lines; i++) {
-             matrix[i] = new T [columns];
-        }
-        vector<future<void>> futures;
-        int block_size = BlockSize(lines, columns);
-        int num_block_lines = lines / block_size;
-        int num_block_columns = columns / block_size;
-        //Создаем фьючерсы для каждого блока
-        for (int i = 0; i < num_block_lines; i++) {
-            for (int j = 0; j < num_block_columns; j++) {
-                futures.push_back(async(launch::async, [i, j, block_size, this, &second]() {
-                for (int l=0; l<block_size; l++) {
-                        for (int c=0; c<block_size; c++) {
-                            this->matrix[i * block_size + l][j * block_size + c] = second.matrix[i * block_size + l][j * block_size + c]; 
-                        }
-                    }
-                }));
-            }
-        }
-        for (int i = 0; i < futures.size(); i++) {
-            futures[i].get(); 
-        }
-        auto end = chrono::high_resolution_clock::now();
-        auto duration = chrono::duration_cast<chrono::nanoseconds>(end - start);
-        cout << "Время выполнения оператора присваивания: " << duration.count() << " наносекунд" << endl;
-        return *this;
-    } Многопоточное копирование дольше(429817 наносекунд), чем однопоточное(52846 наносекунд)  (проверено на матрицах 100 на 100) На создание потоков уходит больше времени, чем на алгоритм. Если бы матрицы были много больших размеров, то постепенно с их ростом многопоточное копирование становилось бы быстрее*/
     Matrix& operator =(const Matrix & second) {
-        auto start = chrono::high_resolution_clock::now();
         if (this == &second) {
             return *this;
         }
@@ -431,9 +414,6 @@ public:
                 matrix[i][j] = second.matrix[i][j];
             }
         }
-        auto end = chrono::high_resolution_clock::now();
-        auto duration = chrono::duration_cast<chrono::nanoseconds>(end - start);
-        //cout << "Время выполнения оператора присваивания: " << duration.count() << " наносекунд" << endl;
         return *this;
     }
 
@@ -624,96 +604,46 @@ public:
 
 int main() {
     int num_cores = thread::hardware_concurrency(); //количество всех ядер на компьютере=количество потоков, запускаемых одновременно
-    cout << "Количество ядер: " << num_cores << endl << '\v';
+    cout << '\v' << "Количество ядер: " << num_cores << endl << '\v';
 
-    cout << "№15-1" << endl;
-    Matrix<double> A, B, C, D;
-    ifstream data_file("DataFile.txt");
-    data_file >> A >> B >> C >> D;
-    cout << "Матрица A:" << endl << A << "Матрица B:" << endl << B;
+    cout << "№16-1 Измерение времени сложения при разных размерах матрицы и 4-х потоках" << endl;
+    Matrix<double> A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C3, C4, C5, T1, T2, T3;
+    ifstream data_file("DataFile16.txt");
+    data_file >> A1 >> B1 >> A2 >> B2 >> A3 >> B3 >> A4 >> B4 >> A5 >> B5 >> T1 >> T2;
     data_file.close();
-    //Сложение и вычитание
-    try {
-        try {
-            cout << A + B;
-        } catch (const char* error_message){//через параметр в блоке catch мы можем получить то сообщение, которое передается оператору throw
-            cout << error_message << endl;
-        }
-        try {
-            cout << A - B;
-        } catch (const char* error_message){
-            cout << error_message << endl;
-        }
-    } catch (...) {//является последним блоком catch в цепочке обработки исключений и предназначен для обработки общих ситуаций ошибок или случаев, которые не предусмотрены более конкретными блоками catch
-        cout << endl;  
-    }
-    //Умножение на матрицу/скаляр
-    try {
-        cout << A * B;
-    } catch(const char* error_message) {
-        cout << error_message << endl;
-    }
-    double s = 8;
-    cout << "Матрица, умноженная на скаляр:" << endl << A * s;
 
-    cout << "№15-2" << endl;
-    //Оператор =, проверка матриц на равенство, проверка на равенство матрицы и скаляра
-    cout << "Матрица A:" << endl << A << "Матрица B:" << endl << B;
-    B = A;
-    cout << "Матрица B = A:" << endl << B;
-    cout << "Сравнение A и B:" << endl;
-    bool equal_A_B = A==B;
-    bool not_equal_A_B = A!=B;
-    cout << '\v';
-    cout << "Матрица C:" << endl << C;
-    cout << "Сравнение A и C:" << endl;
-    bool equal_A_C = A==C;
-    bool not_equal_A_C = A!=C;
-    cout << '\v';
-    cout << "Матрица D:" << endl << D;
-    cout << "Сравнение D и 8:" << endl;
-    bool equal_D_8 = D==8;
-    bool not_equal_D_8 = D!=8;
-    cout << '\v';
-    cout << "Сравнение D и 3:" << endl;
-    bool equal_D_3 = D==3;
-    bool not_equal_D_3 = D!=3;
-    cout << '\v';
-    //Нулевая, единичная и транспонированная матрица
-    cout << "Нулевая матрица:" << endl << Matrix<int>::zero(3,4);
     try {
-        Matrix<int> E_1 = Matrix<int>::id(3,4);
-        cout << "Единичная матрица:" << endl << E_1;
-    } catch(const char* error_message) {
-        cout << error_message << endl << '\v';
-    }
-    try {
-        Matrix<int> E_2 = Matrix<int>::id(4,4);
-        cout << "Единичная матрица:" << endl << E_2;
-    } catch(const char* error_message) {
+        C1 = A1 + B1;
+    } catch (const char* error_message){
         cout << error_message << endl;
     }
-    C.transposed();
-    cout << "Транспонированная матрица С:" << endl << C;
-    //Детерминант, присоединенная и обратная матрица
     try {
-        try {
-            cout << "Детерминант A: " << A.determinant() << endl;
-        } catch(const char* error_message) {
-            cout << error_message << endl;
-        }
-        try {
-            cout << A;
-            cout << "Присоединенная матрица A*:" << endl << A.join();
-        } catch(const char* error_message) {
-            cout << error_message << endl;
-        }
-        try {
-            cout << !A;
-        } catch(const char* error_message) {
-            cout << error_message << endl;
-        }
-    } catch(...) {
-        cout << endl;
+        C2 = A2 + B2;
+    } catch (const char* error_message){
+        cout << error_message << endl;
     }
+    try {
+        C3 = A3 + B3;
+    } catch (const char* error_message){
+        cout << error_message << endl;
+    }
+    try {
+        C4 = A4 + B4;
+    } catch (const char* error_message){
+        cout << error_message << endl;
+    }
+    try {
+        C5 = A5 + B5;
+    } catch (const char* error_message){
+        cout << error_message << endl;
+    }
+
+    
+    cout << '\v' << "№16-2 Измерение времени вычитания при разном количестве потоков и размере матрицы 500х500" << endl;;
+    try {
+        T3 = T1-T2;
+    } catch (const char* error_message){
+        cout << error_message << endl;
+    }
+    cout << '\v';
 }

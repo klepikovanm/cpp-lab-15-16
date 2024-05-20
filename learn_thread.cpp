@@ -1,49 +1,3 @@
-/*#include <iostream>
-#include <thread> //для работы с потоками
-#include <chrono> //для работы со временем
-using namespace std;
-
-
-void DoWork() {
-    for(int i=0; i<10; i++) {
-        cout << "ID потока = " << this_thread::get_id() << "\tDoWork\t" << i+1 << endl;
-        this_thread::sleep_for(chrono::milliseconds(1000));
-    }
-}
-void summa(int a, int b) {
-    this_thread::sleep_for(chrono::milliseconds(3000));
-    cout << "==========\t" << "summa STARTED\t==========" << endl;
-    this_thread::sleep_for(chrono::milliseconds(5000));
-    cout << "a + b = " << a + b << endl;
-    this_thread::sleep_for(chrono::milliseconds(3000));
-    cout << "==========\t" << "summa STOPPED\t==========" << endl;
-} 
-int main() {
-    /*                      ВИДЕО 1
-    //DoWork();
-    thread th(DoWork); //создаем экземпляр потока и передаем ему в конструктор указатель на функцию, которая будет выполняться параллельно, но только с этим программа корректно работать не будет
-    //th.detach();//разрываем связь между объектом th и потоком, который начали выполнять(то есть, если в main все завершилось, то программа не будет дожидаться завершения этого потока и прервет его раньше 10 итераций)
-    //th.join();//позволяет дождаться конца потока, но его нужно вызывать именно там, где нужно дождаться(в данном случае в самом конце, потому что, если поставить его здесь, потоки будут последовательными, так как основной будет ждать th)
-    thread th2(DoWork);
-
-    for(int i=0; i<10; i++) {
-        cout << "ID потока = " << this_thread::get_id() << "\tmain\t" << i+1 << endl;
-        this_thread::sleep_for(chrono::milliseconds(500));
-    }
-    th.join();
-    th2.join();
-    */
-   /*                       ВИДЕО 2
-    thread th(summa,2,3);//параметры потока - название функции, параметры функции
-    //summa(2,3); 
-    for(int i=0; true; i++) {
-        cout << "ID потока = " << this_thread::get_id() << "\tmain works\t" << i+1 << endl;
-        this_thread::sleep_for(chrono::milliseconds(500));
-    }
-    th.join();
-    
-    return 0;
-}*/
 
 /*
 ПОТОКИ
@@ -76,7 +30,9 @@ int SumVectors (const vector<int>& one, const vector<int>& two) {
 }
 -В общем виде синтаксис async следующий:
 std::future<T> async(launch policy, function<T()>&& fn);
-launch policy - политика запуска (например, launch::async для немедленного запуска).
-function<T()>&& fn - лямбда-функция или другой вызываемый объект, который не возвращает значения.
+launch policy - политика запуска (например, launch::async для немедленного запуска)
+function<T()>&& fn - лямбда-функция или другой вызываемый объект, который не возвращает значения
 
+-chrono::high_resolution_clock::now() функция вовращает момент времени при ее вызове
+-chrono::duration_cast<chrono::nanoseconds>(end - start) преобразует разницу между end и start в указанную единицу времени, в данном случае в наносекунды
 */
